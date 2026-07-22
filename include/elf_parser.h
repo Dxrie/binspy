@@ -21,5 +21,8 @@ int elf_validate(const ElfContext *ctx);
 int is_pie_enabled(const ElfContext *ctx);
 int is_nx_enabled(const ElfContext *ctx);
 int is_canary_enabled(const ElfContext *ctx);
+int is_stripped(const ElfContext *ctx);
+int is_relro_enabled(
+    const ElfContext *ctx); // 0: disabled, 1: partial, 2: enabled (full RELRO)
 
 #endif

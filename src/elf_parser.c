@@ -123,3 +123,67 @@ int is_canary_enabled(const ElfContext *ctx) {
 
   return 0; // canary disabled
 }
+
+int is_stripped(const ElfContext *ctx) {
+  Elf64_Shdr *sh_table =
+      (Elf64_Shdr *)((uint8_t *)ctx->map_data + ctx->header->e_shoff);
+
+  for (int i = 0; i < ctx->header->e_shnum; i++) {
+    if (sh_table[i].sh_type == SHT_SYMTAB && sh_table[i].sh_size > 0) {
+      return 0;
+    }
+  }
+
+  return 1;
+}
+
+int is_relro_enabled(const ElfContext *ctx) {
+  int has_relro_segment = 0;
+  Elf64_Phdr *ph_table =
+      (Elf64_Phdr *)((uint8_t *)ctx->map_data + ctx->header->e_phoff);
+
+  for (int i = 0; i < ctx->header->e_phnum; i++) {
+    if (ph_table[i].p_type == PT_GNU_RELRO) {
+      has_relro_segment = 1;
+      break;
+    }
+  }
+
+  int bind_now = 0;
+  Elf64_Shdr *sh_table =
+      (Elf64_Shdr *)((uint8_t *)ctx->map_data + ctx->header->e_shoff);
+
+  for (int i = 0; i < ctx->header->e_shnum; i++) {
+    if (sh_table[i].sh_type == SHT_DYNAMIC) {
+      Elf64_Dyn *dyn_table =
+          (Elf64_Dyn *)((uint8_t *)ctx->map_data + sh_table[i].sh_offset);
+      size_t num_dyn = sh_table[i].sh_size / sizeof(Elf64_Dyn);
+
+      for (size_t j = 0; j < num_dyn; j++) {
+        if (dyn_table[j].d_tag == DT_NULL) {
+          break; // DT_NULL marks the end of dynamic section
+        }
+        if (dyn_table[j].d_tag == DT_BIND_NOW) {
+          bind_now = 1;
+        } else if (dyn_table[j].d_tag == DT_FLAGS &&
+                   (dyn_table[j].d_un.d_val & DF_BIND_NOW)) {
+          bind_now = 1;
+        } else if (dyn_table[j].d_tag == DT_FLAGS_1 &&
+                   (dyn_table[j].d_un.d_val & DF_1_NOW)) {
+          bind_now = 1;
+        }
+      }
+      break;
+    }
+  }
+
+  if (!has_relro_segment) {
+    return 0;
+  }
+
+  if (bind_now) {
+    return 2;
+  }
+
+  return 1;
+}
