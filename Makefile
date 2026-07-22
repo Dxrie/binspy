@@ -9,7 +9,7 @@ OBJ_DIR := obj
 INC_DIR := include
 
 # Target executable name
-TARGET  := elf-analyzer
+TARGET  := binspy
 
 # Automatically collect all .c files in src/ and map them to obj/.o files
 SRCS    := $(wildcard $(SRC_DIR)/*.c)
