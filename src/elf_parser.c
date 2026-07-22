@@ -8,9 +8,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static void elf_pie_check(const ElfContext *ctx);
-static void elf_nx_check(const ElfContext *ctx);
-
 int elf_init(ElfContext *ctx, const char *filepath) {
   if (!ctx || !filepath)
     return -1;
@@ -47,28 +44,12 @@ int elf_validate(const ElfContext *ctx) {
       ctx->header->e_ident[1] != ELFMAG1 ||
       ctx->header->e_ident[2] != ELFMAG2 ||
       ctx->header->e_ident[3] != ELFMAG3 ||
-      ctx->header->e_ident[EI_CLASS] == ELFCLASS64) {
+      ctx->header->e_ident[EI_CLASS] != ELFCLASS64) {
     // invalid ELF file or not 64 bit (prob gonna implement 32 bit later on)
     return 0;
   }
 
   return 1; // valid ELF file
-}
-
-void elf_print_header_info(const ElfContext *ctx) {
-  if (!elf_validate(ctx)) {
-    printf("\033[1;31m[-] Invalid 64 bit ELF binary.\033[0m\n");
-    return;
-  }
-
-  printf("=== ELF Header ===\n");
-  printf("Entry point address: 0x%lx\n", ctx->header->e_entry);
-  printf("Start of program headers: %ld (bytes into file)\n",
-         ctx->header->e_phoff);
-  printf("Start of section headers: %ld (bytes into file)\n",
-         ctx->header->e_shoff);
-  printf("Number of program headers: %d\n", ctx->header->e_phnum);
-  printf("Number of section headers: %d\n", ctx->header->e_shnum);
 }
 
 void elf_cleanup(ElfContext *ctx) {
@@ -80,29 +61,11 @@ void elf_cleanup(ElfContext *ctx) {
   }
 }
 
-void elf_check_mitigations(const ElfContext *ctx) {
-  int is_pie_enabled = 0;
-
-  if (!elf_validate(ctx)) {
-    printf("\033[1;31m[-] Invalid 64 bit ELF binary.\033[0m\n");
-    return;
-  }
-
-  elf_pie_check(ctx);
-  elf_nx_check(ctx);
+int is_pie_enabled(const ElfContext *ctx) {
+  return ctx->header->e_type == ET_DYN;
 }
 
-static void elf_pie_check(const ElfContext *ctx) {
-  if (ctx->header->e_type == ET_DYN) {
-    printf(
-        "\033[32m[+] PIE (Position Independent Executable): Enabled\033[0m\n");
-  } else {
-    printf("\033[1;31m[-] PIE (Position Independent Executable): "
-           "Disabled\033[0m\n");
-  }
-}
-
-static void elf_nx_check(const ElfContext *ctx) {
+int is_nx_enabled(const ElfContext *ctx) {
   Elf64_Phdr *ph_table =
       (Elf64_Phdr *)((uint8_t *)ctx->map_data + ctx->header->e_phoff);
 
@@ -117,9 +80,5 @@ static void elf_nx_check(const ElfContext *ctx) {
     }
   }
 
-  if (nx_enabled) {
-    printf("\033[32m[+] NX: Enabled\033[0m\n");
-  } else {
-    printf("\033[1;31m[-] NX: Disabled\033[0m\n");
-  }
+  return nx_enabled;
 }
