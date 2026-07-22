@@ -82,3 +82,44 @@ int is_nx_enabled(const ElfContext *ctx) {
 
   return nx_enabled;
 }
+
+int is_canary_enabled(const ElfContext *ctx) {
+  Elf64_Shdr *sh_table =
+      (Elf64_Shdr *)((uint8_t *)ctx->map_data + ctx->header->e_shoff);
+
+  Elf64_Shdr *dynsym_shdr = NULL;
+  Elf64_Shdr *dynstr_shdr = NULL;
+
+  for (int i = 0; i < ctx->header->e_shnum; i++) {
+    if (sh_table[i].sh_type == SHT_DYNSYM) {
+      dynsym_shdr = &sh_table[i];
+      if (dynsym_shdr->sh_link < ctx->header->e_shnum) {
+        dynstr_shdr = &sh_table[dynsym_shdr->sh_link];
+      }
+      break;
+    }
+  }
+
+  if (!dynsym_shdr || !dynstr_shdr) {
+    return 0;
+  }
+
+  Elf64_Sym *sym_table =
+      (Elf64_Sym *)((uint8_t *)ctx->map_data + dynsym_shdr->sh_offset);
+  const char *str_table =
+      (const char *)((uint8_t *)ctx->map_data + dynstr_shdr->sh_offset);
+
+  size_t num_symbols = dynsym_shdr->sh_size / sizeof(Elf64_Sym);
+
+  // iterate through symbols to look for "__stack_chk_fail"
+  for (size_t i = 0; i < num_symbols; i++) {
+    if (sym_table[i].st_name < dynstr_shdr->sh_size) {
+      const char *sym_name = str_table + sym_table[i].st_name;
+      if (strcmp(sym_name, "__stack_chk_fail") == 0) {
+        return 1; // canary enabled
+      }
+    }
+  }
+
+  return 0; // canary disabled
+}

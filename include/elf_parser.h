@@ -15,9 +15,11 @@ typedef struct {
 /* core functions */
 int elf_init(ElfContext *ctx, const char *filepath);
 void elf_cleanup(ElfContext *ctx);
-
-/* inspection functions */
 int elf_validate(const ElfContext *ctx);
-void elf_check_mitigations(const ElfContext *ctx);
+
+/* validate functions */
+int is_pie_enabled(const ElfContext *ctx);
+int is_nx_enabled(const ElfContext *ctx);
+int is_canary_enabled(const ElfContext *ctx);
 
 #endif
