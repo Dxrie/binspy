@@ -18,6 +18,7 @@ typedef struct {
   uint64_t vaddr;            /* virtual memory address */
   size_t size;               /* size of the function (bytes) */
   const char *name;          /* function name */
+  int name_allocated;        /* whether name was dynamically allocated */
 } ElfFunction;
 
 /* helper structure for function list */
