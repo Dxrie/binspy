@@ -8,6 +8,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+/* static function prototype */
+static const uint8_t *vaddr_to_ptr(const ElfContext *ctx, uint64_t vaddr);
+
 int elf_init(ElfContext *ctx, const char *filepath) {
   if (!ctx || !filepath)
     return -1;
@@ -186,4 +189,69 @@ int is_relro_enabled(const ElfContext *ctx) {
   }
 
   return 1;
+}
+
+int elf_find_function(const ElfContext *ctx, const char *function_name,
+                      ElfFunction *func) {
+  if (!ctx || !function_name || !func)
+    return 0;
+
+  Elf64_Shdr *sh_table =
+      (Elf64_Shdr *)((uint8_t *)ctx->map_data + ctx->header->e_shoff);
+
+  for (int i = 0; i < ctx->header->e_shnum; i++) {
+    if (sh_table[i].sh_type == SHT_SYMTAB ||
+        sh_table[i].sh_type == SHT_DYNSYM) {
+      Elf64_Shdr *sym_shdr = &sh_table[i];
+
+      if (sym_shdr->sh_link >= ctx->header->e_shnum)
+        continue;
+      Elf64_Shdr *str_shdr = &sh_table[sym_shdr->sh_link];
+
+      Elf64_Sym *sym_table =
+          (Elf64_Sym *)((uint8_t *)ctx->map_data + sym_shdr->sh_offset);
+      const char *str_table =
+          (const char *)((uint8_t *)ctx->map_data + str_shdr->sh_offset);
+      size_t num_symbols = sym_shdr->sh_size / sizeof(Elf64_Sym);
+
+      for (size_t j = 0; j < num_symbols; j++) {
+        if (sym_table[j].st_name >= str_shdr->sh_size)
+          continue;
+
+        const char *sym_name = str_table + sym_table[j].st_name;
+        if (strcmp(sym_name, function_name) == 0) {
+          const uint8_t *ptr = vaddr_to_ptr(ctx, sym_table[j].st_value);
+          if (!ptr)
+            continue;
+
+          func->code_bytes = ptr;
+          func->vaddr = sym_table[j].st_value;
+          func->size = sym_table[j].st_size;
+          func->name = function_name;
+          return 1;
+        }
+      }
+    }
+  }
+
+  return 0;
+}
+
+static const uint8_t *vaddr_to_ptr(const ElfContext *ctx, uint64_t vaddr) {
+  Elf64_Shdr *sh_table =
+      (Elf64_Shdr *)((uint8_t *)ctx->map_data + ctx->header->e_shoff);
+
+  for (int i = 0; i < ctx->header->e_shnum; i++) {
+    if (!(sh_table[i].sh_flags & SHF_ALLOC))
+      continue;
+
+    uint64_t start = sh_table[i].sh_addr;
+    uint64_t end = start + sh_table[i].sh_size;
+
+    if (vaddr >= start && vaddr < end) {
+      uint64_t offset = sh_table[i].sh_offset + (vaddr - start);
+      return (const uint8_t *)ctx->map_data + offset;
+    }
+  }
+  return NULL;
 }

@@ -1,7 +1,7 @@
 # Compiler and flags
 CC      := gcc
 CFLAGS  := -Wall -Wextra -Werror -Iinclude -std=c11 -g
-LDFLAGS :=
+LDFLAGS := -lcapstone
 
 # Directory structure
 SRC_DIR := src

@@ -12,6 +12,14 @@ typedef struct {
   Elf64_Ehdr *header; /* pointer to the ELF header */
 } ElfContext;
 
+/* helper structure for functions inside the binary */
+typedef struct {
+  const uint8_t *code_bytes; /* pointer to machine code bytes in map_data */
+  uint64_t vaddr;            /* virtual memory address */
+  size_t size;               /* size of the function (bytes) */
+  const char *name;          /* function name */
+} ElfFunction;
+
 /* core functions */
 int elf_init(ElfContext *ctx, const char *filepath);
 void elf_cleanup(ElfContext *ctx);
@@ -22,7 +30,11 @@ int is_pie_enabled(const ElfContext *ctx);
 int is_nx_enabled(const ElfContext *ctx);
 int is_canary_enabled(const ElfContext *ctx);
 int is_stripped(const ElfContext *ctx);
-int is_relro_enabled(
-    const ElfContext *ctx); // 0: disabled, 1: partial, 2: enabled (full RELRO)
+int is_relro_enabled(const ElfContext *ctx); /* 0: disabled, 1: partial, 2:
+                                                enabled (full RELRO) */
+
+/* disassembler helper functions */
+int elf_find_function(const ElfContext *ctx, const char *function_name,
+                      ElfFunction *func);
 
 #endif
