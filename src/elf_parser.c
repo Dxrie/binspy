@@ -237,6 +237,104 @@ int elf_find_function(const ElfContext *ctx, const char *function_name,
   return 0;
 }
 
+int elf_find_all_functions(const ElfContext *ctx,
+                           ElfFunctionList *functionList) {
+  if (!ctx || !functionList)
+    return 0;
+
+  functionList->functions = NULL;
+  functionList->count = 0;
+
+  size_t capacity = 16;
+  ElfFunction *funcs = malloc(capacity * sizeof(ElfFunction));
+
+  if (!funcs)
+    return 0;
+
+  Elf64_Shdr *sh_table =
+      (Elf64_Shdr *)((uint8_t *)ctx->map_data + ctx->header->e_shoff);
+
+  for (int i = 0; i < ctx->header->e_shnum; i++) {
+    if (sh_table[i].sh_type == SHT_SYMTAB ||
+        sh_table[i].sh_type == SHT_DYNSYM) {
+      Elf64_Shdr *sym_shdr = &sh_table[i];
+
+      if (sym_shdr->sh_link >= ctx->header->e_shnum)
+        continue;
+      Elf64_Shdr *str_shdr = &sh_table[sym_shdr->sh_link];
+
+      Elf64_Sym *sym_table =
+          (Elf64_Sym *)((uint8_t *)ctx->map_data + sym_shdr->sh_offset);
+      const char *str_table =
+          (const char *)((uint8_t *)ctx->map_data + str_shdr->sh_offset);
+      size_t num_symbols = sym_shdr->sh_size / sizeof(Elf64_Sym);
+
+      for (size_t j = 0; j < num_symbols; j++) {
+        if (sym_table[j].st_name >= str_shdr->sh_size)
+          continue;
+
+        const char *sym_name = str_table + sym_table[j].st_name;
+        if (ELF64_ST_TYPE(sym_table[j].st_info) == STT_FUNC &&
+            sym_table[j].st_size > 0) {
+          if (strlen(sym_name) == 0)
+            continue;
+
+          int is_duplicate = 0;
+
+          for (size_t k = 0; k < functionList->count; k++) {
+            if (funcs[k].vaddr == sym_table[j].st_value) {
+              is_duplicate = 1;
+              break;
+            }
+          }
+
+          if (is_duplicate)
+            continue;
+
+          const uint8_t *ptr = vaddr_to_ptr(ctx, sym_table[j].st_value);
+          if (!ptr)
+            continue;
+
+          if (functionList->count >= capacity) {
+            capacity *= 2;
+            ElfFunction *new_funcs =
+                realloc(funcs, capacity * sizeof(ElfFunction));
+            if (!new_funcs) {
+              free(funcs);
+              functionList->functions = NULL;
+              functionList->count = 0;
+              return 0;
+            }
+            funcs = new_funcs;
+          }
+
+          funcs[functionList->count].code_bytes = ptr;
+          funcs[functionList->count].vaddr = sym_table[j].st_value;
+          funcs[functionList->count].size = sym_table[j].st_size;
+          funcs[functionList->count].name = sym_name;
+          functionList->count++;
+        }
+      }
+    }
+  }
+
+  if (functionList->count == 0) {
+    free(funcs);
+    return 0;
+  }
+
+  functionList->functions = funcs;
+  return 1;
+}
+
+void elf_free_function_list(ElfFunctionList *functionList) {
+  if (functionList && functionList->functions) {
+    free(functionList->functions);
+    functionList->functions = NULL;
+    functionList->count = 0;
+  }
+}
+
 static const uint8_t *vaddr_to_ptr(const ElfContext *ctx, uint64_t vaddr) {
   Elf64_Shdr *sh_table =
       (Elf64_Shdr *)((uint8_t *)ctx->map_data + ctx->header->e_shoff);
