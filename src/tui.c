@@ -5,6 +5,7 @@
 #include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define COLOR_PAIR_HEADER 1
 #define COLOR_PAIR_STATUS 2
@@ -14,6 +15,8 @@
 #define COLOR_PAIR_GOOD 6
 #define COLOR_PAIR_BAD 7
 #define COLOR_PAIR_FOCUS 8
+#define COLOR_PAIR_REG 9
+#define COLOR_PAIR_IMM 10
 
 typedef enum { FOCUS_SIDEBAR = 0, FOCUS_DISASM = 1 } TuiFocus;
 
@@ -30,6 +33,8 @@ static void init_ncurses_colors(void) {
     init_pair(COLOR_PAIR_GOOD, COLOR_GREEN, COLOR_CYAN);
     init_pair(COLOR_PAIR_BAD, COLOR_RED, COLOR_CYAN);
     init_pair(COLOR_PAIR_FOCUS, COLOR_CYAN, -1);
+    init_pair(COLOR_PAIR_REG, COLOR_YELLOW, -1);
+    init_pair(COLOR_PAIR_IMM, COLOR_GREEN, -1);
   }
 }
 
@@ -105,6 +110,75 @@ static size_t get_instruction_count(const ElfFunction *selectedFunction) {
   return count;
 }
 
+// 100% vibe coded this shi
+static void draw_operands(WINDOW *win, int row, int col, const char *op_str,
+                          int max_width) {
+  int currentCol = col;
+  const char *p = op_str;
+
+  while (*p && (currentCol - col) < max_width) {
+    if (*p == ' ') {
+      mvwaddch(win, row, currentCol++, *p++);
+      continue;
+    }
+
+    if (strchr("[],+-:*", *p)) {
+      mvwaddch(win, row, currentCol++, *p++);
+      continue;
+    }
+
+    if (*p >= '0' && *p <= '9') {
+      wattron(win, COLOR_PAIR(COLOR_PAIR_IMM));
+      while (*p && ((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') ||
+                    (*p >= 'A' && *p <= 'F') || *p == 'x' || *p == 'X')) {
+        if ((currentCol - col) >= max_width)
+          break;
+        mvwaddch(win, row, currentCol++, *p++);
+      }
+      wattroff(win, COLOR_PAIR(COLOR_PAIR_IMM));
+      continue;
+    }
+
+    if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z')) {
+      char buf[64];
+      int i = 0;
+      while (*p &&
+             ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+              (*p >= '0' && *p <= '9')) &&
+             i < 63) {
+        buf[i++] = *p++;
+      }
+      buf[i] = '\0';
+
+      int isKeyword = 0;
+      const char *keywords[] = {"ptr",     "byte",    "word",
+                                "dword",   "qword",   "xmmword",
+                                "ymmword", "zmmword", NULL};
+      for (int k = 0; keywords[k]; k++) {
+        if (strcasecmp(buf, keywords[k]) == 0) {
+          isKeyword = 1;
+          break;
+        }
+      }
+
+      if (isKeyword) {
+        for (int j = 0; j < i && (currentCol - col) < max_width; j++) {
+          mvwaddch(win, row, currentCol++, buf[j]);
+        }
+      } else {
+        wattron(win, COLOR_PAIR(COLOR_PAIR_REG));
+        for (int j = 0; j < i && (currentCol - col) < max_width; j++) {
+          mvwaddch(win, row, currentCol++, buf[j]);
+        }
+        wattroff(win, COLOR_PAIR(COLOR_PAIR_REG));
+      }
+      continue;
+    }
+
+    mvwaddch(win, row, currentCol++, *p++);
+  }
+}
+
 static void draw_main(WINDOW *main_win, const ElfFunction *selectedFunction,
                       size_t disasmScroll, int isFocused) {
   werase(main_win);
@@ -163,7 +237,7 @@ static void draw_main(WINDOW *main_win, const ElfFunction *selectedFunction,
       mvwprintw(main_win, row, 15, "%-8s", insn[idx].mnemonic);
       wattroff(main_win, COLOR_PAIR(COLOR_PAIR_MNEMONIC));
 
-      mvwprintw(main_win, row, 24, "%-.*s", width - 26, insn[idx].op_str);
+      draw_operands(main_win, row, 24, insn[idx].op_str, width - 26);
     }
     cs_free(insn, count);
   } else {
