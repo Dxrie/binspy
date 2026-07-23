@@ -18,7 +18,14 @@ typedef struct {
   uint64_t vaddr;            /* virtual memory address */
   size_t size;               /* size of the function (bytes) */
   const char *name;          /* function name */
+  int name_allocated;        /* whether name was dynamically allocated */
 } ElfFunction;
+
+/* helper structure for function list */
+typedef struct {
+  ElfFunction *functions;
+  size_t count;
+} ElfFunctionList;
 
 /* core functions */
 int elf_init(ElfContext *ctx, const char *filepath);
@@ -36,5 +43,8 @@ int is_relro_enabled(const ElfContext *ctx); /* 0: disabled, 1: partial, 2:
 /* disassembler helper functions */
 int elf_find_function(const ElfContext *ctx, const char *function_name,
                       ElfFunction *func);
+int elf_find_all_functions(const ElfContext *ctx,
+                           ElfFunctionList *functionList);
+void elf_free_function_list(ElfFunctionList *functionList);
 
 #endif
