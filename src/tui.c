@@ -301,8 +301,6 @@ static void draw_status(WINDOW *status_win, const ElfContext *ctx,
     wattroff(status_win, COLOR_PAIR(COLOR_PAIR_BAD));
   }
 
-  wprintw(status_win, " | [Left/Right] Switch Pane | [q] Exit");
-
   wnoutrefresh(status_win);
 }
 
