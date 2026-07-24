@@ -31,6 +31,7 @@ int elf_init(ElfContext *ctx, const char *filepath) {
   if (ctx->map_data == MAP_FAILED) {
     perror("mmap");
     ctx->map_data = NULL;
+    close(fd);
     return -1;
   }
 
@@ -310,11 +311,15 @@ int elf_find_all_functions(const ElfContext *ctx,
           }
 
           uint64_t offset_in_file = ptr - (const uint8_t *)ctx->map_data;
-          uint64_t max_size = ctx->file_size > offset_in_file ? ctx->file_size - offset_in_file : 0;
-          
+          uint64_t max_size = ctx->file_size > offset_in_file
+                                  ? ctx->file_size - offset_in_file
+                                  : 0;
+
           funcs[functionList->count].code_bytes = ptr;
           funcs[functionList->count].vaddr = sym_table[j].st_value;
-          funcs[functionList->count].size = (sym_table[j].st_size > max_size) ? max_size : sym_table[j].st_size;
+          funcs[functionList->count].size = (sym_table[j].st_size > max_size)
+                                                ? max_size
+                                                : sym_table[j].st_size;
           funcs[functionList->count].name = sym_name;
           funcs[functionList->count].name_allocated = 0;
           functionList->count++;
@@ -340,8 +345,10 @@ int elf_find_all_functions(const ElfContext *ctx,
           snprintf(name_buf, 32, "sub_%lx", ctx->header->e_entry);
 
           uint64_t offset_in_file = ptr - (const uint8_t *)ctx->map_data;
-          uint64_t max_size = ctx->file_size > offset_in_file ? ctx->file_size - offset_in_file : 0;
-          
+          uint64_t max_size = ctx->file_size > offset_in_file
+                                  ? ctx->file_size - offset_in_file
+                                  : 0;
+
           funcs[functionList->count].code_bytes = ptr;
           funcs[functionList->count].vaddr = ctx->header->e_entry;
           funcs[functionList->count].size = (max_size > 128) ? 128 : max_size;
@@ -352,24 +359,27 @@ int elf_find_all_functions(const ElfContext *ctx,
       }
     }
 
-    if (ctx->header->e_shnum > 0 && ctx->header->e_shstrndx != SHN_UNDEF && ctx->header->e_shstrndx < ctx->header->e_shnum) {
+    if (ctx->header->e_shnum > 0 && ctx->header->e_shstrndx != SHN_UNDEF &&
+        ctx->header->e_shstrndx < ctx->header->e_shnum) {
       Elf64_Shdr *sh_table =
           (Elf64_Shdr *)((uint8_t *)ctx->map_data + ctx->header->e_shoff);
       Elf64_Shdr *str_shdr = &sh_table[ctx->header->e_shstrndx];
-      
+
       if (str_shdr->sh_offset < ctx->file_size) {
         const char *sh_str_table =
             (const char *)((uint8_t *)ctx->map_data + str_shdr->sh_offset);
 
         for (int i = 0; i < ctx->header->e_shnum; i++) {
-          if (sh_table[i].sh_name >= str_shdr->sh_size) continue;
-          
+          if (sh_table[i].sh_name >= str_shdr->sh_size)
+            continue;
+
           const char *sh_name = sh_str_table + sh_table[i].sh_name;
           if (strcmp(sh_name, ".text") == 0) {
             uint64_t sh_offset = sh_table[i].sh_offset;
             uint64_t text_size = sh_table[i].sh_size;
-            
-            if (sh_offset + text_size > ctx->file_size) continue;
+
+            if (sh_offset + text_size > ctx->file_size)
+              continue;
 
             uint8_t *text_ptr = (uint8_t *)ctx->map_data + sh_offset;
             uint64_t text_vaddr = sh_table[i].sh_addr;
@@ -377,7 +387,8 @@ int elf_find_all_functions(const ElfContext *ctx,
             for (uint64_t offset = 0; offset + 3 < text_size; offset++) {
               int is_prologue = 0;
               if (text_ptr[offset] == 0x55 && text_ptr[offset + 1] == 0x48 &&
-                  text_ptr[offset + 2] == 0x89 && text_ptr[offset + 3] == 0xe5) {
+                  text_ptr[offset + 2] == 0x89 &&
+                  text_ptr[offset + 3] == 0xe5) {
                 is_prologue = 1;
               } else if (text_ptr[offset] == 0xf3 &&
                          text_ptr[offset + 1] == 0x0f &&
@@ -402,19 +413,24 @@ int elf_find_all_functions(const ElfContext *ctx,
                   capacity *= 2;
                   ElfFunction *new_funcs =
                       realloc(funcs, capacity * sizeof(ElfFunction));
-                  if (!new_funcs) break;
+                  if (!new_funcs)
+                    break;
                   funcs = new_funcs;
                 }
 
                 char *name_buf = malloc(32);
                 snprintf(name_buf, 32, "sub_%lx", func_vaddr);
 
-                uint64_t offset_in_file = (text_ptr + offset) - (uint8_t *)ctx->map_data;
-                uint64_t max_size = ctx->file_size > offset_in_file ? ctx->file_size - offset_in_file : 0;
+                uint64_t offset_in_file =
+                    (text_ptr + offset) - (uint8_t *)ctx->map_data;
+                uint64_t max_size = ctx->file_size > offset_in_file
+                                        ? ctx->file_size - offset_in_file
+                                        : 0;
 
                 funcs[functionList->count].code_bytes = text_ptr + offset;
                 funcs[functionList->count].vaddr = func_vaddr;
-                funcs[functionList->count].size = (max_size > 128) ? 128 : max_size;
+                funcs[functionList->count].size =
+                    (max_size > 128) ? 128 : max_size;
                 funcs[functionList->count].name = name_buf;
                 funcs[functionList->count].name_allocated = 1;
                 functionList->count++;
@@ -462,7 +478,8 @@ static const uint8_t *vaddr_to_ptr(const ElfContext *ctx, uint64_t vaddr) {
 
       if (vaddr >= start && vaddr < end) {
         uint64_t offset = sh_table[i].sh_offset + (vaddr - start);
-        if (offset >= ctx->file_size) return NULL;
+        if (offset >= ctx->file_size)
+          return NULL;
         return (const uint8_t *)ctx->map_data + offset;
       }
     }
@@ -473,14 +490,16 @@ static const uint8_t *vaddr_to_ptr(const ElfContext *ctx, uint64_t vaddr) {
         (Elf64_Phdr *)((uint8_t *)ctx->map_data + ctx->header->e_phoff);
 
     for (int i = 0; i < ctx->header->e_phnum; i++) {
-      if (ph_table[i].p_type != PT_LOAD) continue;
+      if (ph_table[i].p_type != PT_LOAD)
+        continue;
 
       uint64_t start = ph_table[i].p_vaddr;
       uint64_t end = start + ph_table[i].p_memsz;
 
       if (vaddr >= start && vaddr < end) {
         uint64_t offset = ph_table[i].p_offset + (vaddr - start);
-        if (offset >= ctx->file_size) return NULL;
+        if (offset >= ctx->file_size)
+          return NULL;
         return (const uint8_t *)ctx->map_data + offset;
       }
     }
