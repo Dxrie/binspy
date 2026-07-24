@@ -14,9 +14,10 @@
 #define COLOR_PAIR_ADDR 5
 #define COLOR_PAIR_GOOD 6
 #define COLOR_PAIR_BAD 7
-#define COLOR_PAIR_FOCUS 8
-#define COLOR_PAIR_REG 9
-#define COLOR_PAIR_IMM 10
+#define COLOR_PAIR_MID 8
+#define COLOR_PAIR_FOCUS 9
+#define COLOR_PAIR_REG 10
+#define COLOR_PAIR_IMM 11
 
 typedef enum { FOCUS_SIDEBAR = 0, FOCUS_DISASM = 1 } TuiFocus;
 
@@ -35,6 +36,7 @@ static void init_ncurses_colors(void) {
     init_pair(COLOR_PAIR_FOCUS, COLOR_CYAN, -1);
     init_pair(COLOR_PAIR_REG, COLOR_YELLOW, -1);
     init_pair(COLOR_PAIR_IMM, COLOR_GREEN, -1);
+    init_pair(COLOR_PAIR_MID, COLOR_YELLOW, COLOR_CYAN);
   }
 }
 
@@ -256,6 +258,7 @@ static void draw_status(WINDOW *status_win, const ElfContext *ctx,
   int isPie = is_pie_enabled(ctx);
   int isCanary = is_canary_enabled(ctx);
   int isNx = is_nx_enabled(ctx);
+  int relroState = is_relro_enabled(ctx);
 
   werase(status_win);
   wbkgd(status_win, COLOR_PAIR(COLOR_PAIR_STATUS));
@@ -281,6 +284,22 @@ static void draw_status(WINDOW *status_win, const ElfContext *ctx,
   wattron(status_win, COLOR_PAIR(isPie ? COLOR_PAIR_GOOD : COLOR_PAIR_BAD));
   wprintw(status_win, "%s", isPie ? "Yes" : "No");
   wattroff(status_win, COLOR_PAIR(isPie ? COLOR_PAIR_GOOD : COLOR_PAIR_BAD));
+
+  wprintw(status_win, " | RELRO: ");
+
+  if (relroState == 2) {
+    wattron(status_win, COLOR_PAIR(COLOR_PAIR_GOOD));
+    wprintw(status_win, "Full");
+    wattroff(status_win, COLOR_PAIR(COLOR_PAIR_GOOD));
+  } else if (relroState == 1) {
+    wattron(status_win, COLOR_PAIR(COLOR_PAIR_MID)); // Yellow/Cyan highlight
+    wprintw(status_win, "Partial");
+    wattroff(status_win, COLOR_PAIR(COLOR_PAIR_MID));
+  } else {
+    wattron(status_win, COLOR_PAIR(COLOR_PAIR_BAD));
+    wprintw(status_win, "No");
+    wattroff(status_win, COLOR_PAIR(COLOR_PAIR_BAD));
+  }
 
   wprintw(status_win, " | [Left/Right] Switch Pane | [q] Exit");
 
