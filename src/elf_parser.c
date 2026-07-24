@@ -328,6 +328,85 @@ int elf_find_all_functions(const ElfContext *ctx,
     }
   }
 
+  if (ctx->header->e_shnum > 0 && ctx->header->e_shstrndx != SHN_UNDEF &&
+      ctx->header->e_shstrndx < ctx->header->e_shnum) {
+    Elf64_Shdr *plt_shdr = NULL;
+    Elf64_Shdr *rela_plt_shdr = NULL;
+    
+    Elf64_Shdr *sh_str_shdr = &sh_table[ctx->header->e_shstrndx];
+    if (sh_str_shdr->sh_offset < ctx->file_size) {
+      const char *sh_str_table = (const char *)((uint8_t *)ctx->map_data + sh_str_shdr->sh_offset);
+      
+      for (int i = 0; i < ctx->header->e_shnum; i++) {
+        if (sh_table[i].sh_name < sh_str_shdr->sh_size) {
+          const char *sh_name = sh_str_table + sh_table[i].sh_name;
+          if (strcmp(sh_name, ".plt") == 0) plt_shdr = &sh_table[i];
+          else if (strcmp(sh_name, ".rela.plt") == 0) rela_plt_shdr = &sh_table[i];
+        }
+      }
+
+      if (plt_shdr && rela_plt_shdr && rela_plt_shdr->sh_link < ctx->header->e_shnum) {
+        Elf64_Shdr *dynsym_shdr = &sh_table[rela_plt_shdr->sh_link];
+        if (dynsym_shdr->sh_link < ctx->header->e_shnum) {
+          Elf64_Shdr *dynstr_shdr = &sh_table[dynsym_shdr->sh_link];
+          Elf64_Rela *relas = (Elf64_Rela *)((uint8_t *)ctx->map_data + rela_plt_shdr->sh_offset);
+          Elf64_Sym *syms = (Elf64_Sym *)((uint8_t *)ctx->map_data + dynsym_shdr->sh_offset);
+          const char *dynstr = (const char *)((uint8_t *)ctx->map_data + dynstr_shdr->sh_offset);
+          size_t num_relas = rela_plt_shdr->sh_size / sizeof(Elf64_Rela);
+
+          for (size_t r = 0; r < num_relas; r++) {
+            size_t sym_idx = ELF64_R_SYM(relas[r].r_info);
+            if (sym_idx * sizeof(Elf64_Sym) >= dynsym_shdr->sh_size) continue;
+            
+            const char *sym_name = dynstr + syms[sym_idx].st_name;
+            if (strlen(sym_name) == 0) continue;
+            
+            uint64_t plt_vaddr = plt_shdr->sh_addr + 16 + r * 16;
+            const uint8_t *plt_ptr = vaddr_to_ptr(ctx, plt_vaddr);
+
+            if (plt_ptr) {
+              if (functionList->count >= capacity) {
+                capacity *= 2;
+                ElfFunction *new_funcs = realloc(funcs, capacity * sizeof(ElfFunction));
+                if (new_funcs) funcs = new_funcs;
+              }
+              if (functionList->count < capacity) {
+                char *name_buf = malloc(strlen(sym_name) + 5);
+                sprintf(name_buf, "%s@plt", sym_name);
+                funcs[functionList->count].code_bytes = plt_ptr;
+                funcs[functionList->count].vaddr = plt_vaddr;
+                funcs[functionList->count].size = 16;
+                funcs[functionList->count].name = name_buf;
+                funcs[functionList->count].name_allocated = 1;
+                functionList->count++;
+              }
+            }
+
+            uint64_t got_vaddr = relas[r].r_offset;
+            const uint8_t *got_ptr = vaddr_to_ptr(ctx, got_vaddr);
+            if (got_ptr) {
+              if (functionList->count >= capacity) {
+                capacity *= 2;
+                ElfFunction *new_funcs = realloc(funcs, capacity * sizeof(ElfFunction));
+                if (new_funcs) funcs = new_funcs;
+              }
+              if (functionList->count < capacity) {
+                char *name_buf = malloc(strlen(sym_name) + 5);
+                sprintf(name_buf, "%s@got", sym_name);
+                funcs[functionList->count].code_bytes = got_ptr;
+                funcs[functionList->count].vaddr = got_vaddr;
+                funcs[functionList->count].size = 8;
+                funcs[functionList->count].name = name_buf;
+                funcs[functionList->count].name_allocated = 1;
+                functionList->count++;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
   if (functionList->count == 0) {
     if (ctx->header->e_entry != 0) {
       const uint8_t *ptr = vaddr_to_ptr(ctx, ctx->header->e_entry);

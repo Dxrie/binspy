@@ -18,6 +18,7 @@
 #define COLOR_PAIR_FOCUS 9
 #define COLOR_PAIR_REG 10
 #define COLOR_PAIR_IMM 11
+#define COLOR_PAIR_FUNC 12
 
 typedef enum { FOCUS_SIDEBAR = 0, FOCUS_DISASM = 1 } TuiFocus;
 
@@ -37,6 +38,7 @@ static void init_ncurses_colors(void) {
     init_pair(COLOR_PAIR_REG, COLOR_YELLOW, -1);
     init_pair(COLOR_PAIR_IMM, COLOR_GREEN, -1);
     init_pair(COLOR_PAIR_MID, COLOR_YELLOW, COLOR_CYAN);
+    init_pair(COLOR_PAIR_FUNC, COLOR_MAGENTA, -1);
   }
 }
 
@@ -113,8 +115,9 @@ static size_t get_instruction_count(const ElfFunction *selectedFunction) {
 }
 
 // 100% vibe coded this shi
-static void draw_operands(WINDOW *win, int row, int col, const char *op_str,
-                          int max_width) {
+static void draw_operands(WINDOW *win, int row, int col, const char *mnemonic,
+                          const char *op_str, int max_width,
+                          const ElfFunctionList *functionList) {
   int currentCol = col;
   const char *p = op_str;
 
@@ -130,14 +133,45 @@ static void draw_operands(WINDOW *win, int row, int col, const char *op_str,
     }
 
     if (*p >= '0' && *p <= '9') {
+      char imm_buf[64];
+      int imm_i = 0;
       wattron(win, COLOR_PAIR(COLOR_PAIR_IMM));
       while (*p && ((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') ||
                     (*p >= 'A' && *p <= 'F') || *p == 'x' || *p == 'X')) {
-        if ((currentCol - col) >= max_width)
-          break;
+        if (imm_i < 63)
+          imm_buf[imm_i++] = *p;
+        if ((currentCol - col) >= max_width) {
+          p++;
+          continue;
+        }
         mvwaddch(win, row, currentCol++, *p++);
       }
+      imm_buf[imm_i] = '\0';
       wattroff(win, COLOR_PAIR(COLOR_PAIR_IMM));
+
+      if (mnemonic &&
+          (strncmp(mnemonic, "call", 4) == 0 || mnemonic[0] == 'j')) {
+        uint64_t target_addr = strtoull(imm_buf, NULL, 16);
+        if (target_addr != 0 && functionList) {
+          for (size_t f = 0; f < functionList->count; f++) {
+            if (functionList->functions[f].vaddr == target_addr) {
+              const char *fname = functionList->functions[f].name;
+              int f_len = strlen(fname);
+              if (currentCol - col + f_len + 3 < max_width) {
+                mvwaddch(win, row, currentCol++, ' ');
+                mvwaddch(win, row, currentCol++, '<');
+                wattron(win, COLOR_PAIR(COLOR_PAIR_FUNC));
+                for (int j = 0; j < f_len; j++) {
+                  mvwaddch(win, row, currentCol++, fname[j]);
+                }
+                wattroff(win, COLOR_PAIR(COLOR_PAIR_FUNC));
+                mvwaddch(win, row, currentCol++, '>');
+              }
+              break;
+            }
+          }
+        }
+      }
       continue;
     }
 
@@ -182,7 +216,8 @@ static void draw_operands(WINDOW *win, int row, int col, const char *op_str,
 }
 
 static void draw_main(WINDOW *main_win, const ElfFunction *selectedFunction,
-                      size_t disasmScroll, int isFocused) {
+                      size_t disasmScroll, int isFocused,
+                      const ElfFunctionList *functionList) {
   werase(main_win);
 
   if (isFocused) {
@@ -239,7 +274,8 @@ static void draw_main(WINDOW *main_win, const ElfFunction *selectedFunction,
       mvwprintw(main_win, row, 15, "%-8s", insn[idx].mnemonic);
       wattroff(main_win, COLOR_PAIR(COLOR_PAIR_MNEMONIC));
 
-      draw_operands(main_win, row, 24, insn[idx].op_str, width - 26);
+      draw_operands(main_win, row, 24, insn[idx].mnemonic, insn[idx].op_str,
+                    width - 26, functionList);
     }
     cs_free(insn, count);
   } else {
@@ -344,7 +380,7 @@ void tui_run(const ElfContext *ctx, const char *filepath) {
   draw_sidebar(sidebar_win, &functionList, selectedIdx, scrollOffset,
                currentFocus == FOCUS_SIDEBAR);
   draw_main(main_win, selectedFunction, disasmScroll,
-            currentFocus == FOCUS_DISASM);
+            currentFocus == FOCUS_DISASM, &functionList);
   draw_status(status_win, ctx, filepath);
   doupdate();
 
@@ -441,7 +477,7 @@ void tui_run(const ElfContext *ctx, const char *filepath) {
       draw_sidebar(sidebar_win, &functionList, selectedIdx, scrollOffset,
                    currentFocus == FOCUS_SIDEBAR);
       draw_main(main_win, selectedFunction, disasmScroll,
-                currentFocus == FOCUS_DISASM);
+                currentFocus == FOCUS_DISASM, &functionList);
       draw_status(status_win, ctx, filepath);
       doupdate();
     }
